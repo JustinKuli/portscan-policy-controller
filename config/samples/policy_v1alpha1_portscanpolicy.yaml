@@ -3,4 +3,11 @@ kind: PortScanPolicy
 metadata:
   name: portscanpolicy-sample
 spec:
-  # TODO(user): Add fields here
+  namespaceSelector:
+    include: ["*"]
+    exclude: []
+  scanTargetKinds:
+  - "services"
+  rules:
+  - name: "MinimumCipherGrade"
+    value: "@"

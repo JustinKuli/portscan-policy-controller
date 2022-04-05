@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<!-- Nmap 7.70 scan initiated Tue Apr  5 15:24:11 2022 as: nmap -Pn -&#45;script ssl-enum-ciphers -oX out.xml -&#45;no-stylesheet -F 10.96.0.1 -->
+<nmaprun scanner="nmap" args="nmap -Pn -&#45;script ssl-enum-ciphers -oX out.xml -&#45;no-stylesheet -F 10.96.0.1" start="1649172251" startstr="Tue Apr  5 15:24:11 2022" version="7.70" xmloutputversion="1.04">
+    <scaninfo type="syn" protocol="tcp" numservices="100" services="7,9,13,21-23,25-26,37,53,79-81,88,106,110-111,113,119,135,139,143-144,179,199,389,427,443-445,465,513-515,543-544,548,554,587,631,646,873,990,993,995,1025-1029,1110,1433,1720,1723,1755,1900,2000-2001,2049,2121,2717,3000,3128,3306,3389,3986,4899,5000,5009,5051,5060,5101,5190,5357,5432,5631,5666,5800,5900,6000-6001,6646,7070,8000,8008-8009,8080-8081,8443,8888,9100,9999-10000,32768,49152-49157"/>
+    <verbose level="0"/>
+    <debugging level="0"/>
+    <host starttime="1649172251" endtime="1649172255"><status state="up" reason="user-set" reason_ttl="0"/>
+        <address addr="10.96.0.1" addrtype="ipv4"/>
+        <hostnames>
+            <hostname name="kubernetes.default.svc.cluster.local" type="PTR"/>
+        </hostnames>
+        <ports>
+            <extraports state="filtered" count="99">
+                <extrareasons reason="no-responses" count="99"/>
+            </extraports>
+            <port protocol="tcp" portid="443">
+                <state state="open" reason="syn-ack" reason_ttl="64"/>
+                <service name="https" method="table" conf="3"/>
+                <script id="ssl-enum-ciphers" output="&#xa;  TLSv1.2: &#xa;    ciphers: &#xa;      TLS_RSA_WITH_AES_128_GCM_SHA256 (rsa 2048) - A&#xa;      TLS_RSA_WITH_AES_256_GCM_SHA384 (rsa 2048) - A&#xa;      TLS_RSA_WITH_AES_128_CBC_SHA (rsa 2048) - A&#xa;      TLS_RSA_WITH_AES_256_CBC_SHA (rsa 2048) - A&#xa;      TLS_RSA_WITH_3DES_EDE_CBC_SHA (rsa 2048) - C&#xa;    compressors: &#xa;      NULL&#xa;    cipher preference: server&#xa;    warnings: &#xa;      64-bit block cipher 3DES vulnerable to SWEET32 attack&#xa;  least strength: C">
+                    <table key="TLSv1.2">
+                        <table key="ciphers">
+                            <table>
+                                <elem key="kex_info">rsa 2048</elem>
+                                <elem key="name">TLS_RSA_WITH_AES_128_GCM_SHA256</elem>
+                                <elem key="strength">A</elem>
+                            </table>
+                            <table>
+                                <elem key="kex_info">rsa 2048</elem>
+                                <elem key="name">TLS_RSA_WITH_AES_256_GCM_SHA384</elem>
+                                <elem key="strength">A</elem>
+                            </table>
+                            <table>
+                                <elem key="kex_info">rsa 2048</elem>
+                                <elem key="name">TLS_RSA_WITH_AES_128_CBC_SHA</elem>
+                                <elem key="strength">A</elem>
+                            </table>
+                            <table>
+                                <elem key="kex_info">rsa 2048</elem>
+                                <elem key="name">TLS_RSA_WITH_AES_256_CBC_SHA</elem>
+                                <elem key="strength">A</elem>
+                            </table>
+                            <table>
+                                <elem key="kex_info">rsa 2048</elem>
+                                <elem key="name">TLS_RSA_WITH_3DES_EDE_CBC_SHA</elem>
+                                <elem key="strength">C</elem>
+                            </table>
+                        </table>
+                        <table key="compressors">
+                            <elem>NULL</elem>
+                        </table>
+                        <elem key="cipher preference">server</elem>
+                        <table key="warnings">
+                            <elem>64-bit block cipher 3DES vulnerable to SWEET32 attack</elem>
+                        </table>
+                    </table>
+                    <elem key="least strength">C</elem>
+                </script>
+            </port>
+        </ports>
+        <times srtt="129" rttvar="5000" to="100000"/>
+    </host>
+    <runstats>
+        <finished time="1649172255" timestr="Tue Apr  5 15:24:15 2022" elapsed="4.04" summary="Nmap done at Tue Apr  5 15:24:15 2022; 1 IP address (1 host up) scanned in 4.04 seconds" exit="success"/>
+        <hosts up="1" down="0" total="1"/>
+    </runstats>
+</nmaprun>

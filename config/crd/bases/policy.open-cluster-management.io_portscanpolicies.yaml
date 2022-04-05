@@ -49,9 +49,22 @@ spec:
                     type: array
                 type: object
               portDiscovery:
-                default: ListedOnly
-                pattern: ^(ListedOnly|Top([\d]+)|ListedAndTop([\d]+))$
-                type: string
+                default:
+                - type: K8sListed
+                items:
+                  properties:
+                    type:
+                      enum:
+                      - K8sListed
+                      - Top
+                      - Specific
+                      type: string
+                    value:
+                      type: string
+                  required:
+                  - type
+                  type: object
+                type: array
               remediationAction:
                 enum:
                 - inform
@@ -68,6 +81,8 @@ spec:
                       type: string
                     value:
                       type: string
+                  required:
+                  - name
                   type: object
                 minItems: 1
                 type: array
@@ -83,7 +98,7 @@ spec:
                     pattern: ^(?:(?:(?:[0-9]+(?:.[0-9])?)(?:h|m|s|(?:ms)|(?:us)|(?:ns)))|never)+$
                     type: string
                 type: object
-              scanTargets:
+              scanTargetKinds:
                 items:
                   enum:
                   - pods
@@ -101,10 +116,28 @@ spec:
                 type: string
             required:
             - rules
-            - scanTargets
+            - scanTargetKinds
             type: object
           status:
             description: PortScanPolicyStatus defines the observed state of PortScanPolicy
+            properties:
+              compliant:
+                type: string
+              lastScanCompletion:
+                type: string
+              violations:
+                items:
+                  properties:
+                    kind:
+                      type: string
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                  type: object
+                type: array
             type: object
         type: object
     served: true

@@ -9,8 +9,8 @@ namespace: portscan-policy-controller-system
 namePrefix: portscan-policy-controller-
 
 # Labels to add to all resources and selectors.
-#commonLabels:
-#  someName: someValue
+commonLabels:
+  app: portscan-policy-controller
 
 bases:
 - ../crd

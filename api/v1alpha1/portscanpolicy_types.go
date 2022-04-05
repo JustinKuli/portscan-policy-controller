@@ -18,19 +18,18 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"github.com/JustinKuli/portscan-policy-controller/pkg/policycore"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // PortScanPolicySpec defines the desired state of PortScanPolicy
 type PortScanPolicySpec struct {
-	Severity          Severity          `json:"severity,omitempty"`
-	RemediationAction RemediationAction `json:"remediationAction,omitempty"`
-	NamespaceSelector NamespaceSelector `json:"namespaceSelector,omitempty"`
+	policycore.PolicyCoreSpec `json:",inline"`
 
 	//+kubebuilder:validation:UniqueIems=true
 	//+kubebuilder:validation:MinItems=1
 	//+kubebuilder:validation:Required
-	ScanTargets []ScanTarget `json:"scanTargets"`
+	ScanTargetKinds []ScanTargetKind `json:"scanTargetKinds"`
 
 	//+kubebuilder:validation:UniqueIems=true
 	//+kubebuilder:validation:MinItems=1
@@ -40,51 +39,33 @@ type PortScanPolicySpec struct {
 	//+kubebuilder:default={compliant:"1h",noncompliant:"1h"}
 	ScanInterval ScanInterval `json:"scanInterval"`
 
-	//+kubebuilder:default=ListedOnly
-	PortDiscovery PortDiscoveryOption `json:"portDiscovery"`
+	//+kubebuilder:default={{type:"K8sListed"}}
+	PortDiscovery []PortDiscoveryOption `json:"portDiscovery"`
 }
-
-//+kubebuilder:validation:Enum=low;medium;high;critical
-type Severity string
-
-const (
-	LowSeverity      Severity = "low"
-	MediumSeverity   Severity = "medium"
-	HighSeverity     Severity = "high"
-	CriticalSeverity Severity = "critical"
-)
-
-//+kubebuilder:validation:Enum=inform;enforce
-type RemediationAction string
-
-const (
-	Inform  RemediationAction = "inform"
-	Enforce RemediationAction = "enforce"
-)
-
-//+kubebuilder:validation:Required
-type NamespaceSelector struct {
-	Include []NonEmptyString `json:"include,omitempty"`
-	Exclude []NonEmptyString `json:"exclude,omitempty"`
-}
-
-//+kubebuilder:validation:MinLength=1
-type NonEmptyString string
 
 //+kubebuilder:validation:Enum=pods;routes;services
-type ScanTarget string
+type ScanTargetKind string
 
 const (
-	ScanPods     ScanTarget = "pods"
-	ScanRoutes   ScanTarget = "routes"
-	ScanServices ScanTarget = "services"
+	ScanPods     ScanTargetKind = "pods"
+	ScanRoutes   ScanTargetKind = "routes"
+	ScanServices ScanTargetKind = "services"
 )
 
 type Rule struct {
-	//+kubebuilder:validation:Enum=MinimumTLSVersion;MinimumCipherGrade;NoPort
-	RuleName string `json:"name"`
-	Value    string `json:"value,omitempty"`
+	//+kubebuilder:validation:Required
+	Name  RuleName `json:"name"`
+	Value string   `json:"value,omitempty"`
 }
+
+//+kubebuilder:validation:Enum=MinimumTLSVersion;MinimumCipherGrade;NoPort
+type RuleName string
+
+const (
+	RuleMinimumTLSVersion  RuleName = "MinimumTLSVersion"
+	RuleMinimumCipherGrade RuleName = "MinimumCipherGrade"
+	RuleNoPort             RuleName = "NoPort"
+)
 
 type ScanInterval struct {
 	//+kubebuilder:validation:Pattern=`^(?:(?:(?:[0-9]+(?:.[0-9])?)(?:h|m|s|(?:ms)|(?:us)|(?:ns)))|never)+$`
@@ -93,17 +74,34 @@ type ScanInterval struct {
 	NonCompliant string `json:"noncompliant,omitempty"`
 }
 
-//+kubebuilder:validation:Pattern=`^(ListedOnly|Top([\d]+)|ListedAndTop([\d]+))$`
-type PortDiscoveryOption string
+type PortDiscoveryOption struct {
+	//+kubebuilder:validation:Required
+	Type  PortType `json:"type"`
+	Value string   `json:"value,omitempty"`
+}
 
-const PortDiscoveryRegex string = `^(ListedOnly|Top([\d]+)|ListedAndTop([\d]+))$`
+//+kubebuilder:validation:Enum=K8sListed;Top;Specific
+type PortType string
 
-// END OF SPEC FIELDS
+const (
+	PortTypeK8sListed PortType = "K8sListed"
+	PortTypeTop       PortType = "Top"
+	PortTypeSpecific  PortType = "Specific"
+)
 
 // PortScanPolicyStatus defines the observed state of PortScanPolicy
 type PortScanPolicyStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	policycore.PolicyCoreStatus `json:",inline"`
+
+	LastScanCompletion string              `json:"lastScanCompletion,omitempty"`
+	Violations         []PortScanViolation `json:"violations,omitempty"`
+}
+
+type PortScanViolation struct {
+	Kind      string `json:"kind"` // pod, route, service
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	Message   string `json:"message"` // violation information
 }
 
 //+kubebuilder:object:root=true
