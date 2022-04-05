@@ -1,0 +1,16 @@
+domain: open-cluster-management.io
+layout:
+- go.kubebuilder.io/v3
+projectName: portscan-policy-controller
+repo: github.com/JustinKuli/portscan-policy-controller
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: open-cluster-management.io
+  group: policy
+  kind: PortScanPolicy
+  path: github.com/JustinKuli/portscan-policy-controller/api/v1alpha1
+  version: v1alpha1
+version: "3"

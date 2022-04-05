@@ -1,0 +1,6 @@
+apiVersion: policy.open-cluster-management.io/v1alpha1
+kind: PortScanPolicy
+metadata:
+  name: portscanpolicy-sample
+spec:
+  # TODO(user): Add fields here
