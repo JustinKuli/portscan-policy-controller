@@ -57,6 +57,11 @@ func (r *SSLEnumRunner) WithSpecificPorts(ports []int) *SSLEnumRunner {
 	return r
 }
 
+func (r *SSLEnumRunner) WithAllPorts() *SSLEnumRunner {
+	r.portOpts = []string{"-p", "-"}
+	return r
+}
+
 func (r *SSLEnumRunner) Run(ctx context.Context) (scriptout.NMapRun, error) {
 	args := append(r.mainOpts, r.outputOpts...)
 	args = append(args, r.portOpts...)

@@ -26,6 +26,8 @@ import (
 
 //+kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
 
+// GetNamespaces lists all namespaces in the cluster and returns a list of the
+// namespaces that match the NamespaceSelector.
 func (sel NamespaceSelector) GetNamespaces(ctx context.Context, r client.Reader) ([]string, error) {
 	matchingNamespaces := make([]string, 0)
 
