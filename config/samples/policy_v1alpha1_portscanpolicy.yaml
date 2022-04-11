@@ -5,7 +5,9 @@ metadata:
 spec:
   namespaceSelector:
     include: ["*"]
-    exclude: []
+    exclude:
+    - "openshift*"
+    - "kube-*"
   scanTargetKinds:
   - "services"
   rules:

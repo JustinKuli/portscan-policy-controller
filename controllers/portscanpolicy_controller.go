@@ -34,7 +34,7 @@ import (
 
 const (
 	ControllerName = "port-scan-policy-controller"
-	ScanTimeout    = 20 * time.Minute
+	ScanTimeout    = 10 * time.Minute
 )
 
 var (

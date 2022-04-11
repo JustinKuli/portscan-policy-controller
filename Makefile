@@ -14,7 +14,7 @@ $(CONTROLLER_GEN):
 
 .PHONY: manifests
 manifests: $(CONTROLLER_GEN) ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./api/..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: $(CONTROLLER_GEN) ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -31,7 +31,7 @@ vet: ## Run go vet against code.
 .PHONY: test
 test-unit: manifests generate fmt vet ## Run unit tests.
 	echo "no unit tests defined yet"
-# e.g. go test ./... -coverprofile cover.out
+# go test ./... -coverprofile cover.out
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -93,4 +93,4 @@ kind-regenerate-controller: kind-load-image manifests generate $(KUSTOMIZE) $(KI
 	cd config/default && $(KUSTOMIZE) edit set image policy-addon-image=$(IMG)
 	KUBECONFIG=$(KIND_KUBECONFIG) $(KUSTOMIZE) build config/default | kubectl apply -f -
 	mv config/default/kustomization.yaml.tmp config/default/kustomization.yaml
-	KUBECONFIG=$(KIND_KUBECONFIG) kubectl delete -n portscan-policy-controller-system pods -l=control-plane=controller-manager
+	KUBECONFIG=$(KIND_KUBECONFIG) kubectl delete -n portscan-policy-controller-system pods -l=app=portscan-policy-controller

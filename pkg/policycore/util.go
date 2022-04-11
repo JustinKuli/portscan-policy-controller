@@ -21,12 +21,14 @@ import (
 	"path/filepath"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 //+kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
 
-// GetNamespaces lists all namespaces in the cluster and returns a list of the
+// GetNamespaces fetches all namespaces in the cluster and returns a list of the
 // namespaces that match the NamespaceSelector.
 func (sel NamespaceSelector) GetNamespaces(ctx context.Context, r client.Reader) ([]string, error) {
 	matchingNamespaces := make([]string, 0)
@@ -44,6 +46,7 @@ func (sel NamespaceSelector) GetNamespaces(ctx context.Context, r client.Reader)
 	return sel.matches(namespaces)
 }
 
+// matches filters a slice of strings, and returns ones that match the selector
 func (sel NamespaceSelector) matches(namespaces []string) ([]string, error) {
 	matchingNamespaces := make([]string, 0)
 
@@ -82,4 +85,40 @@ func (sel NamespaceSelector) matches(namespaces []string) ([]string, error) {
 	}
 
 	return matchingNamespaces, nil
+}
+
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+
+// RecordComplianceEvent creates an event on the "parent" policy of the given
+// object (found through ownerReferences, which is set by the policy framework)
+// which can be recognized by the policy framework to update the parent policy's
+// status. This is the way that compliance information gets sent to the hub.
+// The provided message will be prepended with "Compliant; " or "NonCompliant; "
+// as required by the policy framework.
+func RecordComplianceEvent(r record.EventRecorder, policy ObjectWithCompliance, msg string) {
+	if len(policy.GetOwnerReferences()) != 0 {
+		ownerRef := policy.GetOwnerReferences()[0]
+		parentPolicy := &ParentPolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ownerRef.Name,
+				Namespace: policy.GetNamespace(), // K8s ensures that owning objects are in the same namespace
+				UID:       ownerRef.UID,
+			},
+			TypeMeta: metav1.TypeMeta{
+				Kind:       ownerRef.Kind,
+				APIVersion: ownerRef.APIVersion,
+			},
+		}
+
+		eventType := "Normal"
+		msgPrefix := "Compliant; "
+		if policy.GetComplianceState() == NonCompliant {
+			eventType = "Warning"
+			msgPrefix = "NonCompliant; "
+		}
+
+		reason := "policy: " + policy.GetNamespace() + "/" + policy.GetName()
+
+		r.Event(parentPolicy, eventType, reason, msgPrefix+msg)
+	}
 }

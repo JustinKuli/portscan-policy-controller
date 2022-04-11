@@ -15,10 +15,12 @@ limitations under the License.
 */
 
 //+kubebuilder:object:generate=true
+//+groupName=mock
 package policycore
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type PolicyCoreSpec struct {
@@ -56,8 +58,10 @@ type NonEmptyString string
 
 type PolicyCoreStatus struct {
 	ComplianceState ComplianceState `json:"compliant,omitempty"`
+	RelatedObjects  []RelatedObject `json:"relatedObjects,omitempty"`
 }
 
+//+kubebuilder:validation:Enum=Compliant;NonCompliant;UnknownCompliancy
 type ComplianceState string
 
 const (
@@ -71,11 +75,43 @@ const (
 	UnknownCompliancy ComplianceState = "UnknownCompliancy"
 )
 
+//+kubebuilder:object:generate=false
+
+// ObjectWithCompliance contains the usual client.Object metadata interface, as
+// well as a user-implemented method to get the compliance state, which is used
+// when creating compliance events to propagate status back to the hub cluster.
+type ObjectWithCompliance interface {
+	client.Object
+	GetComplianceState() ComplianceState
+}
+
+type RelatedObject struct {
+	Object    ObjectRef       `json:"object,omitempty"`
+	Compliant ComplianceState `json:"compliant,omitempty"`
+	Reason    string          `json:"reason,omitempty"`
+}
+
+type ObjectRef struct {
+	metav1.TypeMeta `json:",inline"`
+	Metadata        ReferenceMetadata `json:"metadata,omitempty"`
+}
+
+type ReferenceMetadata struct {
+	Name      string `json:"name,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// SortString returns a string which can help sort RelatedObjects.
+func (o RelatedObject) SortString() string {
+	return o.Object.APIVersion + o.Object.Kind + o.Object.Metadata.Namespace +
+		o.Object.Metadata.Name + o.Reason
+}
+
 //+kubebuilder:object:root=true
 
-// ParentPolicy is a basic Kubernetes object. It is a simplified stand-in for the actual Policy
-// type so that events can be triggered as required by the policy framework without importing the
-// full Policy API.
+// ParentPolicy is a basic Kubernetes object. It is a simplified stand-in for
+// the actual Policy type so that events can be triggered as required by the
+// policy framework without importing the full Policy API.
 type ParentPolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

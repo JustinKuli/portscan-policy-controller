@@ -93,15 +93,7 @@ const (
 type PortScanPolicyStatus struct {
 	policycore.PolicyCoreStatus `json:",inline"`
 
-	LastScanCompletion string              `json:"lastScanCompletion,omitempty"`
-	Violations         []PortScanViolation `json:"violations,omitempty"`
-}
-
-type PortScanViolation struct {
-	Kind      string `json:"kind"` // pod, route, service
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-	Message   string `json:"message"` // violation information
+	LastScanCompletion string `json:"lastScanCompletion,omitempty"`
 }
 
 //+kubebuilder:object:root=true
@@ -115,6 +107,13 @@ type PortScanPolicy struct {
 	Spec   PortScanPolicySpec   `json:"spec,omitempty"`
 	Status PortScanPolicyStatus `json:"status,omitempty"`
 }
+
+func (p *PortScanPolicy) GetComplianceState() policycore.ComplianceState {
+	return p.Status.ComplianceState
+}
+
+// blank assignment to verify that PortScanPolicy implements policycore.ObjectWithCompliance
+var _ policycore.ObjectWithCompliance = &PortScanPolicy{}
 
 //+kubebuilder:object:root=true
 

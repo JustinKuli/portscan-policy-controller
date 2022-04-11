@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -27,6 +28,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	policyv1alpha1 "github.com/JustinKuli/portscan-policy-controller/api/v1alpha1"
@@ -35,6 +37,11 @@ import (
 	"github.com/JustinKuli/portscan-policy-controller/pkg/scan/scriptout"
 )
 
+// runScanSet runs a set of nmap scans on the cluster, against the targets and
+// rules specified by the Policy, and reports violations through the policy
+// framework. Any errors during execution are also reported as violations. Upon
+// completion (even in an error case), another scanset is scheduled. The scanset
+// can be canceled by canceling the context.
 func (r *PortScanPolicyReconciler) runScanSet(
 	ctx context.Context, psp *policyv1alpha1.PortScanPolicy,
 ) {
@@ -46,85 +53,60 @@ func (r *PortScanPolicyReconciler) runScanSet(
 
 	scanLog.Info("Getting scan targets")
 	scanTargets, err := getTargets(scanCtx, psp, r)
-	if err != nil {
-		// TODO: Check if ctx is expired - if not, create a violation.
+	if err != nil && errors.Is(err, context.Canceled) {
+		return
+	} else if err != nil {
+		r.handleError(ctx, psp, fmt.Errorf("unable to get scan targets: %w", err))
 		return
 	}
 
 	scanLog.Info("Starting scans", "ScanCount", len(psp.Spec.PortDiscovery))
 	reports, err := getReports(scanCtx, scanTargets, psp.Spec.PortDiscovery)
-	if err != nil {
-		// TODO: Check if ctx is expired - if not, create a violation.
+	if err != nil && errors.Is(err, context.Canceled) {
+		return
+	} else if err != nil {
+		r.handleError(ctx, psp, fmt.Errorf("unable to run scans: %w", err))
 		return
 	}
 
 	scanLog.Info("Got reports, determining compliance status", "reportsCount", len(reports))
 	violations, err := getViolations(psp.Spec.Rules, reports, scanTargets)
-	if err != nil {
-		// TODO: An error here would *not* be from an expired ctx - just report as a violation
+	if err != nil { // The error here will never be an expired context
+		r.handleError(ctx, psp, fmt.Errorf("unable to get violations: %w", err))
 		return
 	}
 	scanLog.Info("Got compliance status", "violationsCount", len(violations))
 
-	psp.Status = policyv1alpha1.PortScanPolicyStatus{
-		LastScanCompletion: time.Now().Format(time.RFC3339),
-		Violations:         violations,
-	}
-	var msg, scanInterval string
+	psp.Status.LastScanCompletion = time.Now().Format(time.RFC3339)
+	psp.Status.RelatedObjects = violations
+
 	if len(violations) == 0 {
 		psp.Status.ComplianceState = policycore.Compliant
-		// The "Compliant" part is required by the status sync,
-		// the rest is just conventional/informational
-		msg = "Compliant; notification - port scan completed and found no violations"
-		scanInterval = psp.Spec.ScanInterval.Compliant
 	} else {
 		psp.Status.ComplianceState = policycore.NonCompliant
-		msg = "NonCompliant; violation - port scan completed but found "
-		if len(violations) == 1 {
-			v := violations[0]
-			msg += fmt.Sprintf("that %v %v in namespace %v has violation '%v'",
-				v.Kind, v.Name, v.Namespace, v.Message)
-		} else {
-			msg += "multiple violations"
-		}
-		scanInterval = psp.Spec.ScanInterval.NonCompliant
 	}
 
-	r.recordComplianceEventOnParent(psp, msg)
-	if err := r.Status().Update(scanCtx, psp); err != nil {
-		// TODO: Check if ctx is expired ... if not, retry?
-		fmt.Println("Uh-oh, error 205")
-	}
+	recordComplianceEvent(r.Recorder, psp)
 
-	if scanInterval == "never" {
-		// Don't need to schedule another scan
+	err = r.Status().Update(scanCtx, psp)
+	if err != nil && errors.Is(err, context.Canceled) {
+		return
+	} else if err != nil {
+		r.handleError(ctx, psp, fmt.Errorf("unable to update policy status: %w", err))
 		return
 	}
 
-	sleepDuration, err := time.ParseDuration(scanInterval)
-	if err != nil {
-		// TODO: Handle error ... log and use a default?
-		fmt.Println("Uh-oh, error 218")
-	}
-
-	sleepTimer := time.NewTimer(sleepDuration)
-
-	select {
-	case <-sleepTimer.C:
-		go r.runScanSet(ctx, psp)
-	case <-ctx.Done():
-		// stop the timer, and drain its channel if necessary
-		if !sleepTimer.Stop() {
-			<-sleepTimer.C
-		}
-	}
+	r.scheduleNextScan(ctx, psp)
 }
 
+// scanTarget contains information about a k8s object to scan. It does not
+// include the IP address because it is meant to be stored in a map, with
+// addresses as the keys.
 type scanTarget struct {
-	kind      string
-	namespace string
-	name      string
-	ports     []int
+	Kind      string
+	Namespace string
+	Name      string
+	Ports     []int
 }
 
 // getTargets finds targets of the Policy by using the NamespaceSelector and
@@ -140,9 +122,10 @@ func getTargets(
 	if err != nil {
 		return nil, fmt.Errorf("unable to determine selected namespaces: %w", err)
 	}
+	scanLog.V(2).Info("Got selected namespaces", "coveredNamespaces", coveredNamespaces)
 
 	scanLog.V(1).Info("Determining addresses of scan targets")
-	scanTargets := make(map[string]scanTarget, 0)
+	scanTargets := make(map[string]scanTarget)
 	for _, ns := range coveredNamespaces {
 		for _, scanKind := range psp.Spec.ScanTargetKinds {
 			switch scanKind {
@@ -167,9 +150,11 @@ func getTargets(
 	}
 	scanLog.V(2).Info("Determined scan target details", "scanTargets", scanTargets)
 
-	return nil, nil
+	return scanTargets, nil
 }
 
+// svcTargets fetches services on the specified namespace, and gathers info into
+// a scanTarget map, keyed by IP address.
 func svcTargets(ctx context.Context, r client.Reader, ns string) (map[string]scanTarget, error) {
 	targets := make(map[string]scanTarget)
 
@@ -185,18 +170,18 @@ func svcTargets(ctx context.Context, r client.Reader, ns string) (map[string]sca
 		}
 		for _, ip := range svc.Spec.ClusterIPs {
 			targets[ip] = scanTarget{
-				kind:      "service[clusterIP]",
-				namespace: ns,
-				name:      svc.GetName(),
-				ports:     ports,
+				Kind:      "service",
+				Namespace: ns,
+				Name:      svc.GetName(),
+				Ports:     ports,
 			}
 		}
 		for _, ip := range svc.Spec.ExternalIPs {
 			targets[ip] = scanTarget{
-				kind:      "service[externalIP]",
-				namespace: ns,
-				name:      svc.GetName(),
-				ports:     ports,
+				Kind:      "service",
+				Namespace: ns,
+				Name:      svc.GetName(),
+				Ports:     ports,
 			}
 		}
 	}
@@ -302,7 +287,7 @@ func flattenPortsAndIPs(targets map[string]scanTarget) (ports []int, ips []strin
 	ips = make([]string, 0, len(targets))
 	for ip, t := range targets {
 		ips = append(ips, ip)
-		for _, p := range t.ports {
+		for _, p := range t.Ports {
 			portSet[p] = struct{}{}
 		}
 	}
@@ -324,8 +309,8 @@ func getViolations(
 	rules []policyv1alpha1.Rule,
 	reports []scriptout.NMapRun,
 	scanTargets map[string]scanTarget,
-) ([]policyv1alpha1.PortScanViolation, error) {
-	violations := make([]policyv1alpha1.PortScanViolation, 0)
+) ([]policycore.RelatedObject, error) {
+	violations := make([]policycore.RelatedObject, 0)
 
 	for _, report := range reports {
 		for _, rule := range rules {
@@ -352,8 +337,7 @@ func getViolations(
 	}
 
 	sort.Slice(violations, func(i, j int) bool {
-		vi, vj := violations[i], violations[j]
-		return vi.Kind+vi.Namespace+vi.Name+vi.Message < vj.Kind+vj.Namespace+vj.Name+vj.Message
+		return violations[i].SortString() < violations[j].SortString()
 	})
 
 	return violations, nil
@@ -368,7 +352,7 @@ func minimumCipherGradeViolations(
 	ruleValue string,
 	report scriptout.NMapRun,
 	scanTargets map[string]scanTarget,
-) ([]policyv1alpha1.PortScanViolation, error) {
+) ([]policycore.RelatedObject, error) {
 	if len(ruleValue) != 1 {
 		return nil, fmt.Errorf("invalid 'MinimumCipherGrade' Rule value: '%v': "+
 			"must be one character", ruleValue)
@@ -386,7 +370,7 @@ func minimumCipherGradeViolations(
 		return nil, nil
 	}
 
-	violations := make([]policyv1alpha1.PortScanViolation, 0)
+	violations := make([]policycore.RelatedObject, 0)
 	for _, cipher := range report.GetFlatCiphers() {
 		if len(cipher.CipherInfo.Strength) < 1 {
 			// This probably won't happen, but the nmap script is a bit of an unknown.
@@ -405,14 +389,27 @@ func minimumCipherGradeViolations(
 		matchedTarget, found := scanTargets[cipher.HostAddr]
 		if !found {
 			// Unlikely, but the rest of the scan could still be good, so don't return an error.
-			matchedTarget = scanTarget{kind: "unknown", namespace: "unknown", name: "unknown"}
+			matchedTarget = scanTarget{Kind: "unknown", Namespace: "unknown", Name: "unknown"}
 		}
 
-		violations = append(violations, policyv1alpha1.PortScanViolation{
-			Kind:      matchedTarget.kind,
-			Name:      matchedTarget.name,
-			Namespace: matchedTarget.namespace,
-			Message: fmt.Sprintf("Cipher '%v' on %v:%v has strength '%v', needs '%c' or better",
+		apiVersion := "v1"
+		if matchedTarget.Kind == "Route" {
+			apiVersion = "route.openshift.io/v1"
+		}
+
+		violations = append(violations, policycore.RelatedObject{
+			Object: policycore.ObjectRef{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       matchedTarget.Kind,
+					APIVersion: apiVersion,
+				},
+				Metadata: policycore.ReferenceMetadata{
+					Name:      matchedTarget.Name,
+					Namespace: matchedTarget.Namespace,
+				},
+			},
+			Compliant: policycore.NonCompliant,
+			Reason: fmt.Sprintf("Cipher '%v' on %v:%v has strength '%v', needs '%c' or better",
 				cipher.CipherInfo.Name, cipher.HostAddr, cipher.PortID, cipher.CipherInfo.Strength,
 				requiredGrade),
 		})
@@ -421,28 +418,96 @@ func minimumCipherGradeViolations(
 	return violations, nil
 }
 
-func (r *PortScanPolicyReconciler) recordComplianceEventOnParent(psp *policyv1alpha1.PortScanPolicy, msg string) {
-	if len(psp.OwnerReferences) != 0 {
-		owner := psp.OwnerReferences[0]
-		parentPolicy := &policycore.ParentPolicy{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      owner.Name,
-				Namespace: psp.GetNamespace(), // Owning objects must be in the same namespace
-				UID:       owner.UID,
-			},
-			TypeMeta: metav1.TypeMeta{
-				Kind:       owner.Kind,
-				APIVersion: owner.APIVersion,
-			},
+// recordComplianceEvent records compliance events for the policy framework.
+func recordComplianceEvent(r record.EventRecorder, psp *policyv1alpha1.PortScanPolicy) {
+	violations := psp.Status.RelatedObjects
+	var msg string
+
+	if len(violations) == 0 {
+		// The "Compliant" part required by status-sync is added by the policycore library
+		msg = "notification - port scan completed and found no violations"
+	} else {
+		msg = "violation - port scan completed but found "
+		if len(violations) == 1 {
+			v := violations[0].Object
+			msg += fmt.Sprintf("that %v/%v %v in namespace %v has violation '%v'",
+				v.APIVersion, v.Kind, v.Metadata.Name, v.Metadata.Namespace, violations[0].Reason)
+		} else {
+			msg += "multiple violations"
 		}
+	}
 
-		eventType := "Normal"
-		if psp.Status.ComplianceState == policycore.NonCompliant {
-			eventType = "Warning"
+	policycore.RecordComplianceEvent(r, psp, msg)
+}
+
+func (r *PortScanPolicyReconciler) handleError(
+	ctx context.Context, psp *policyv1alpha1.PortScanPolicy, err error,
+) {
+	scanLog := log.WithValues("PolicyNamespace", psp.GetNamespace(), "PolicyName", psp.GetName())
+	scanLog.Error(err, "Marking error as violation")
+
+	psp.Status.LastScanCompletion = ""
+	psp.Status.RelatedObjects = []policycore.RelatedObject{
+		{
+			Object: policycore.ObjectRef{
+				TypeMeta: psp.TypeMeta,
+				Metadata: policycore.ReferenceMetadata{
+					Name:      psp.Name,
+					Namespace: psp.Namespace,
+				},
+			},
+			Compliant: policycore.NonCompliant,
+			Reason:    fmt.Sprintf("Error while running scan: %v", err),
+		},
+	}
+	psp.Status.ComplianceState = policycore.NonCompliant
+
+	recordComplianceEvent(r.Recorder, psp)
+
+	updateErr := r.Status().Update(ctx, psp)
+	if updateErr != nil && errors.Is(updateErr, context.Canceled) {
+		return
+	} else if updateErr != nil {
+		scanLog.Error(updateErr, "Error updating status while handling another error",
+			"originalError", err)
+		return
+	}
+
+	r.scheduleNextScan(ctx, psp)
+}
+
+// scheduleNextScan waits for the specified time in the Policy (depending on the
+// compliance), then starts the next scanset. It can be canceled through its ctx
+func (r *PortScanPolicyReconciler) scheduleNextScan(
+	ctx context.Context, psp *policyv1alpha1.PortScanPolicy,
+) {
+	scanLog := log.WithValues("PolicyNamespace", psp.GetNamespace(), "PolicyName", psp.GetName())
+
+	scanInterval := psp.Spec.ScanInterval.Compliant
+	if psp.GetComplianceState() != policycore.Compliant {
+		scanInterval = psp.Spec.ScanInterval.NonCompliant
+	}
+
+	if scanInterval == "never" {
+		// Don't need to schedule another scan
+		return
+	}
+
+	sleepDuration, err := time.ParseDuration(scanInterval)
+	if err != nil {
+		scanLog.Error(err, "Unable to parse scanInterval duration - using 1h default")
+		sleepDuration = time.Hour
+	}
+
+	sleepTimer := time.NewTimer(sleepDuration)
+
+	select {
+	case <-sleepTimer.C:
+		go r.runScanSet(ctx, psp)
+	case <-ctx.Done():
+		// stop the timer, and drain its channel if necessary
+		if !sleepTimer.Stop() {
+			<-sleepTimer.C
 		}
-
-		reason := "policy: " + psp.GetNamespace() + "/" + psp.GetName()
-
-		r.Recorder.Event(parentPolicy, eventType, reason, msg)
 	}
 }

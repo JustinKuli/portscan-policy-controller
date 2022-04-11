@@ -19,11 +19,13 @@ package scan
 import (
 	"context"
 	"encoding/xml"
+	"io"
 	"os/exec"
 	"strconv"
 	"strings"
 
 	"github.com/JustinKuli/portscan-policy-controller/pkg/scan/scriptout"
+	klog "k8s.io/klog/v2"
 )
 
 type SSLEnumRunner struct {
@@ -67,8 +69,14 @@ func (r *SSLEnumRunner) Run(ctx context.Context) (scriptout.NMapRun, error) {
 	args = append(args, r.portOpts...)
 	args = append(args, r.ipArgs...)
 
+	klog.V(2).Info("Executing nmap command; args: ", args)
 	cmd := exec.CommandContext(ctx, "nmap", args...)
 	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return scriptout.NMapRun{}, err
+	}
+
+	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return scriptout.NMapRun{}, err
 	}
@@ -83,6 +91,12 @@ func (r *SSLEnumRunner) Run(ctx context.Context) (scriptout.NMapRun, error) {
 	if err := dec.Decode(&out); err != nil {
 		return out, err
 	}
+
+	slurp, err := io.ReadAll(stderr)
+	if err != nil {
+		return out, err
+	}
+	klog.V(2).Info("nmap stderr output: ", string(slurp))
 
 	if err := cmd.Wait(); err != nil {
 		return out, err
