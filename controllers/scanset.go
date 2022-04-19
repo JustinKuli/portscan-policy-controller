@@ -31,8 +31,8 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	policycore "github.com/JustinKuli/policycore-test/api/v1"
 	policyv1alpha1 "github.com/JustinKuli/portscan-policy-controller/api/v1alpha1"
-	"github.com/JustinKuli/portscan-policy-controller/pkg/policycore"
 	"github.com/JustinKuli/portscan-policy-controller/pkg/scan"
 	"github.com/JustinKuli/portscan-policy-controller/pkg/scan/scriptout"
 )

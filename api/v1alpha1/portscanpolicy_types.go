@@ -18,7 +18,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"github.com/JustinKuli/portscan-policy-controller/pkg/policycore"
+	policycore "github.com/JustinKuli/policycore-test/api/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

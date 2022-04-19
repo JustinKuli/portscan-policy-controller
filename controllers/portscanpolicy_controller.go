@@ -63,6 +63,9 @@ var _ reconcile.Reconciler = &PortScanPolicyReconciler{}
 //+kubebuilder:rbac:groups=core,resources=pods;services,verbs=get;list;watch
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch
 
+//+kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+
 // Reconcile schedules scans based on the Policy's spec. When the spec is
 // updated the scan will be re-scheduled, but adjusting the status on its own
 // will not trigger a reconciliation. If the Policy is deleted, the scan is
