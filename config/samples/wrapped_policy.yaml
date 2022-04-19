@@ -1,0 +1,54 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: portscan-example-a
+  namespace: default
+spec:
+  disabled: false
+  remediationAction: inform
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1alpha1
+        kind: PortScanPolicy
+        metadata:
+          name: example-a
+        spec:
+          severity: medium
+          namespaceSelector:
+            include:
+              - "*"
+            exclude:
+              - kube-*
+              - openshift*
+          scanTargetKinds:
+            - "services"
+          rules:
+            - name: "MinimumCipherGrade"
+              value: "A"
+---
+apiVersion: apps.open-cluster-management.io/v1
+kind: PlacementRule
+metadata:
+  name: portscan-example-a-placement
+  namespace: default
+spec:
+  clusterSelector:
+    matchExpressions:
+      - key: name
+        operator: In
+        values:
+          - local-cluster
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: portscan-example-a-placement
+  namespace: default
+placementRef:
+  apiGroup: apps.open-cluster-management.io
+  kind: PlacementRule
+  name: portscan-example-a-placement
+subjects:
+  - apiGroup: policy.open-cluster-management.io
+    kind: Policy
+    name: portscan-example-a

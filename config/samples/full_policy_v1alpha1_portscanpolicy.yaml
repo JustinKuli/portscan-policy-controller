@@ -1,0 +1,25 @@
+apiVersion: policy.open-cluster-management.io/v1alpha1
+kind: PortScanPolicy
+metadata:
+  name: portscanpolicy-sample
+spec:
+  severity: "low"
+  remediationAction: "inform"
+  namespaceSelector:
+    include: ["*"]
+    exclude: ["openshift*", "kube-*"]
+  scanTargetKinds:
+  - "services" # or "pods" or "routes"
+  portDiscovery:
+  - type: "K8sListed"
+  # other types could be implemented
+  rules:
+  - name: "MinimumCipherGrade"
+    value: "A"
+  # more rules could be implemented
+  scanInterval:
+    compliant: "6h"
+    noncompliant: "1h"
+
+
+
