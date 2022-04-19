@@ -128,29 +128,89 @@ func getTargets(
 	scanTargets := make(map[string]scanTarget)
 	for _, ns := range coveredNamespaces {
 		for _, scanKind := range psp.Spec.ScanTargetKinds {
+			var addTargets map[string]scanTarget
+			var err error
+
 			switch scanKind {
+			case policyv1alpha1.ScanNodes:
+				addTargets, err = nodeTargets(ctx, r, ns)
 			case policyv1alpha1.ScanPods:
-				// TODO: implement
+				addTargets, err = podTargets(ctx, r, ns)
 			case policyv1alpha1.ScanRoutes:
 				// TODO: implement
 			case policyv1alpha1.ScanServices:
-				addTargets, err := svcTargets(ctx, r, ns)
-				if err != nil {
-					return nil, err
-				}
-
-				for ip, target := range addTargets {
-					scanTargets[ip] = target
-				}
+				addTargets, err = svcTargets(ctx, r, ns)
 			default:
 				// The kubernetes spec validation *should* prevent this from occurring.
 				scanLog.Info("Unknown option, skipping this kind", "ScanTargetKind", scanKind)
 			}
+
+			if err != nil {
+				return nil, err
+			}
+
+			for ip, target := range addTargets {
+				scanTargets[ip] = target
+			}
+
 		}
 	}
 	scanLog.V(2).Info("Determined scan target details", "scanTargets", scanTargets)
 
 	return scanTargets, nil
+}
+
+func nodeTargets(ctx context.Context, r client.Reader, ns string) (map[string]scanTarget, error) {
+	targets := make(map[string]scanTarget)
+
+	nodeList := &corev1.NodeList{}
+	if err := r.List(ctx, nodeList, &client.ListOptions{Namespace: ns}); err != nil {
+		return nil, err
+	}
+
+	for _, node := range nodeList.Items {
+		port := int(node.Status.DaemonEndpoints.KubeletEndpoint.Port)
+		for _, addr := range node.Status.Addresses {
+			if addr.Type == corev1.NodeInternalIP || addr.Type == corev1.NodeExternalIP {
+				targets[addr.Address] = scanTarget{
+					Kind:      "node",
+					Namespace: "",
+					Name:      node.GetName(),
+					Ports:     []int{port},
+				}
+			}
+		}
+	}
+
+	return targets, nil
+}
+
+func podTargets(ctx context.Context, r client.Reader, ns string) (map[string]scanTarget, error) {
+	targets := make(map[string]scanTarget)
+
+	podList := &corev1.PodList{}
+	if err := r.List(ctx, podList, &client.ListOptions{Namespace: ns}); err != nil {
+		return nil, err
+	}
+
+	for _, pod := range podList.Items {
+		ports := make([]int, 0)
+		for _, cont := range pod.Spec.Containers {
+			for _, p := range cont.Ports {
+				ports = append(ports, int(p.ContainerPort))
+			}
+		}
+		for _, ip := range pod.Status.PodIPs {
+			targets[ip.IP] = scanTarget{
+				Kind:      "pod",
+				Namespace: ns,
+				Name:      pod.GetName(),
+				Ports:     ports,
+			}
+		}
+	}
+
+	return targets, nil
 }
 
 // svcTargets fetches services on the specified namespace, and gathers info into

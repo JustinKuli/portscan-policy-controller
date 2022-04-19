@@ -43,10 +43,11 @@ type PortScanPolicySpec struct {
 	PortDiscovery []PortDiscoveryOption `json:"portDiscovery"`
 }
 
-//+kubebuilder:validation:Enum=pods;routes;services
+//+kubebuilder:validation:Enum=nodes;pods;routes;services
 type ScanTargetKind string
 
 const (
+	ScanNodes    ScanTargetKind = "nodes"
 	ScanPods     ScanTargetKind = "pods"
 	ScanRoutes   ScanTargetKind = "routes"
 	ScanServices ScanTargetKind = "services"

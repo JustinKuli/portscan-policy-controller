@@ -101,6 +101,7 @@ spec:
               scanTargetKinds:
                 items:
                   enum:
+                  - nodes
                   - pods
                   - routes
                   - services
